@@ -1,69 +1,9 @@
 Created on Mon Sep 18 12:15:31 2023
 ----------------------------------------
 @author: Casey van der Leek : 2023.9.18
-#SAVED as: Python Files > GarminProject-DECODED.py      
+#SAVED as: Python Files > SignalDECODED.py      
 # -------------------------------------------------------------------------
-import pandas as pd 
-import numpy as np
-import scipy
-import sklearn
-import matplotlib
-import os
-from pathlib import Path
-import sys
-sys.path.insert(1,'C:/Users/Casey/Python-Spyder/_pyache_')
-sys.path.insert(1,'C:/Users/Casey/Snake/Anaconda3/envs/VirtualMachinE/Lib/site-packages/rosinstall')
-sys.path.insert(1,'C:/Users/Casey/Python-Spyder/DATA/')
-sys.path.insert(1,'C:/Users/Casey/Python-Spyder/PROGRAMS/')
-sys.path.insert(1,'C:/Users/Casey/Python-Spyder')
-sys.path.insert(1,'C:/Users/Casey/Python-Spyder/DATA/data2.txt')
-
-import constant # import constant.py file from PROGRAMS folder
-import random 
-import DATA # import DATA folder from PROGRAMS folder  
-
-import matplotlib.pyplot as plt
-import csv
-
-# SPECIAL imports:
-# ------------------
-from sympy import symbols
-from scipy import linalg 
-#import scipy.linalg
-from numpy import linalg
-# Make all matlib functions accessible at the top level via M.func()
-import numpy.matlib as M
-# Non-linear Least Squares (LSQ) optimization function import:
-from scipy.optimize import least_squares
-# Make some matlib functions accessible directly at the top level via, e.g. rand(3,3)
-from numpy.matlib import rand,zeros,ones,empty,eye
-# Define a Hermitian function
-def hermitian(A, **kwargs):
-    return np.transpose(A,**kwargs).conj()
-# Make some shortcuts for transpose,hermitian:
-#    np.transpose(A) --> T(A)
-#    hermitian(A) --> H(A)
-T = np.transpose
-H = hermitian
-import termcolor
-import colorama
-from termcolor import colored, cprint
-from colorama import init, Fore, Back, Style
-import psycopg2 # this module provides an API for python to interact with a database
-import config
-import sqlite3
-# Blockchain imports ---->
-import datetime # For timestamp
-import hashlib # Calculating the hash in order to add digital fingerprints to the blocks
-import json # To store data in the blockchain
-from flask import Flask, jsonify # Flask is for creating the web app and jsonify is for
-# displaying the blockchain
-from torch.autograd.functional import jacobian
-from torch import tensor
-from sympy import Eq, solve # <--- equations are instantiated as an object of the Eq class
-# use solve() to solve for multiple system definition and multiple variables 
-# e.g sol = solve((eq1, eq2),(x, y)) 
-# FFtrsfrm = scipy.fft.fft(Y) #  Fourier transform 
+# Import all the required Python modules ---> 
 # -------------------------------------------------------------------------
 #%clear #<---- clear console
 # -------------------------------------------------------------------------
