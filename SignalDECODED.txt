@@ -10,7 +10,7 @@ Created on Mon Sep 18 12:15:31 2023
 # CODE execution START:
 # -------------------------------------------------------------------------
 # ACCESS sample signal DATA :::>
-DATAvector = np.genfromtxt("C:/Users/Casey/Python-Spyder/PROGRAMS/PROJECTS/Project-5-Garmin/SignalData.txt")
+DATAvector = np.genfromtxt("C:/Users/........................SignalData.txt")
 signalDataSE = DATAvector # all signal data [26085x1]
 del DATAvector
 # --------------------------------------------------------------------------------------
