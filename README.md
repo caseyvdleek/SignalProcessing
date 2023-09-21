@@ -1,2 +1,2 @@
 # SignalProcessing
-Decoding of a corrupted noise signal
+Decoding of a corrupted UART signal
