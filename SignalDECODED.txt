@@ -1,0 +1,777 @@
+Created on Mon Sep 18 12:15:31 2023
+----------------------------------------
+@author: Casey van der Leek : 2023.9.18
+#SAVED as: Python Files > GarminProject-DECODED.py      
+# -------------------------------------------------------------------------
+import pandas as pd 
+import numpy as np
+import scipy
+import sklearn
+import matplotlib
+import os
+from pathlib import Path
+import sys
+sys.path.insert(1,'C:/Users/Casey/Python-Spyder/_pyache_')
+sys.path.insert(1,'C:/Users/Casey/Snake/Anaconda3/envs/VirtualMachinE/Lib/site-packages/rosinstall')
+sys.path.insert(1,'C:/Users/Casey/Python-Spyder/DATA/')
+sys.path.insert(1,'C:/Users/Casey/Python-Spyder/PROGRAMS/')
+sys.path.insert(1,'C:/Users/Casey/Python-Spyder')
+sys.path.insert(1,'C:/Users/Casey/Python-Spyder/DATA/data2.txt')
+
+import constant # import constant.py file from PROGRAMS folder
+import random 
+import DATA # import DATA folder from PROGRAMS folder  
+
+import matplotlib.pyplot as plt
+import csv
+
+# SPECIAL imports:
+# ------------------
+from sympy import symbols
+from scipy import linalg 
+#import scipy.linalg
+from numpy import linalg
+# Make all matlib functions accessible at the top level via M.func()
+import numpy.matlib as M
+# Non-linear Least Squares (LSQ) optimization function import:
+from scipy.optimize import least_squares
+# Make some matlib functions accessible directly at the top level via, e.g. rand(3,3)
+from numpy.matlib import rand,zeros,ones,empty,eye
+# Define a Hermitian function
+def hermitian(A, **kwargs):
+    return np.transpose(A,**kwargs).conj()
+# Make some shortcuts for transpose,hermitian:
+#    np.transpose(A) --> T(A)
+#    hermitian(A) --> H(A)
+T = np.transpose
+H = hermitian
+import termcolor
+import colorama
+from termcolor import colored, cprint
+from colorama import init, Fore, Back, Style
+import psycopg2 # this module provides an API for python to interact with a database
+import config
+import sqlite3
+# Blockchain imports ---->
+import datetime # For timestamp
+import hashlib # Calculating the hash in order to add digital fingerprints to the blocks
+import json # To store data in the blockchain
+from flask import Flask, jsonify # Flask is for creating the web app and jsonify is for
+# displaying the blockchain
+from torch.autograd.functional import jacobian
+from torch import tensor
+from sympy import Eq, solve # <--- equations are instantiated as an object of the Eq class
+# use solve() to solve for multiple system definition and multiple variables 
+# e.g sol = solve((eq1, eq2),(x, y)) 
+# FFtrsfrm = scipy.fft.fft(Y) #  Fourier transform 
+# -------------------------------------------------------------------------
+#%clear #<---- clear console
+# -------------------------------------------------------------------------
+# CODE execution START:
+# -------------------------------------------------------------------------
+# ACCESS sample signal DATA :::>
+DATAvector = np.genfromtxt("C:/Users/Casey/Python-Spyder/PROGRAMS/PROJECTS/Project-5-Garmin/SignalData.txt")
+signalDataSE = DATAvector # all signal data [26085x1]
+del DATAvector
+# --------------------------------------------------------------------------------------
+# Generate the synthetic measurement NOISE data for EKF state estimation
+# --------------------------------------------------------------------------------------
+# Choose signal data n sample interval 
+Nstart = 1
+Nstop = 26085
+numPTS = 26085# numPTS = Nstop - Nstart + 1
+# --------------------------------------------------------------------------------------
+# Synthetic MEASUREMENT NOISE ON HIGH BITS
+# -------------------------------------------
+# USE::::::::::>>>>> Generate noise data #1 :
+NSEvecSE_HIGH = np.random.uniform(low = -1.0, high = 1.0, size = numPTS)
+# --------------------------------------------------------------------------------------
+# Synthesise measurement noise on HIGH bits: 
+DC_32V_temp = 3.2*ones((1,numPTS)) 
+y1 = np.array([DC_32V_temp])                                
+y2 = y1.ravel() 
+DC_32V = y2 
+del y1, y2, DC_32V_temp 
+NZslope = 0.00017   
+noiseVH = NZslope*NSEvecSE_HIGH
+nSMPLS = np.linspace(Nstart,Nstop,numPTS)
+noiseSE_H = DC_32V + nSMPLS*noiseVH
+NSEvecSE_H =  noiseSE_H
+# --------------------------------------------------------------------------------------
+# Synthetic MEASUREMENT NOISE ON LOW BITS
+# -------------------------------------------
+# USE::::::::::>>>>> Generate noise data #1 :
+NSEvecSE_LOW = np.random.uniform(low = -1.0, high = 1.0, size = numPTS)
+# --------------------------------------------------------------------------------------
+# Synthesise measurement noise on LOW bits: 
+DC_00V_temp = 0.0*ones((1,numPTS)) 
+y1 = np.array([DC_00V_temp])                                
+y2 = y1.ravel() 
+DC_00V = y2 
+del y1, y2, DC_00V_temp    
+noiseVL = NZslope*NSEvecSE_LOW
+nSMPLS = np.linspace(Nstart,Nstop,numPTS)
+noiseSE_L = DC_00V + nSMPLS*noiseVL
+NSEvecSE_L = noiseSE_L
+# -------------------------------------------------------------------------
+rngVAL = 25  # |STT| and |STP1||STP| bits are 25 samples in length
+vecN_ii = zeros((1,rngVAL))
+vecV_ii = zeros((1,rngVAL))
+logic1s = ones((1,17))
+logic0s = zeros((1,8))
+deltaN_O = 95
+deltaN_E = 96
+delta_1BIT = 8
+delta_2BIT = 17
+# -------------------------------- iteration #1 (i) ---------------------
+indx = 0
+n_i = 193    
+n_j = delta_1BIT + n_i - 1  
+n_v = deltaN_O + n_i - 1 
+n_u = n_v - delta_2BIT + 1 
+# ----------------------------------------------------------------
+for k in range(8) : # repeats 8 times (1 BIT length)
+    vecN_ii[0,indx] = n_i
+    n_i = n_i + 1
+    indx = indx + 1 
+    
+for k in range(17) : # repeats 17 times (2 BIT length)
+    vecN_ii[0,indx] = n_u
+    n_u = n_u + 1
+    indx = indx + 1
+# ---------------------------------------
+logicBITS_O =  np.append([logic0s],[logic1s])
+mtx_NV_ij_O =  np.vstack((vecN_ii,logicBITS_O))
+MTX_NV_ALLdata = mtx_NV_ij_O
+# ----------------------------------------------------------------
+# -------------------------------- iteration #1 (ii) ----------------------
+indx = 0
+n_i = n_v + 1
+n_j = delta_1BIT + n_i - 1  
+n_v = deltaN_E + n_i - 1 
+n_u = n_v - delta_2BIT + 1
+# ----------------------------------------------------------------
+for k in range(8) : # repeats 8 times (1 BIT length)
+    vecN_ii[0,indx] = n_i
+    n_i = n_i + 1
+    indx = indx + 1 
+    
+for k in range(17) : # repeats 17 times (2 BIT length)
+    vecN_ii[0,indx] = n_u
+    n_u = n_u + 1
+    indx = indx + 1
+# ---------------------------------------
+logicBITS_E =  np.append([logic0s],[logic1s])
+mtx_NV_ij_E =  np.vstack((vecN_ii,logicBITS_E))
+# ----------------------------------------------------------------
+MTX_NV_data =  np.vstack((mtx_NV_ij_O,mtx_NV_ij_E)) 
+MTX_NV_ALLdata = MTX_NV_data
+# Now enter the FOR loop for the remaining data sets ::::>>>>>>>>
+# --------------------------------------------------------------------------------------
+# FOR LOOP  : START
+# --------------------------------------------------------------------------------------
+# -------------------------------- iteration #2 (i) ---------------------
+for k in range(135) : # repeats FOR loop code block 135(= (272-2)/2) times 
+    # -------------------------------- iteration #k (i) ----------------------
+    indx = 0
+    n_i = n_v + 1   
+    n_j = delta_1BIT + n_i - 1  
+    n_v = deltaN_O + n_i - 1 
+    n_u = n_v - delta_2BIT + 1 
+    # ----------------------------------------------------------------
+    for k in range(8) : # repeats 8 times (1 BIT length)
+        vecN_ii[0,indx] = n_i
+        n_i = n_i + 1
+        indx = indx + 1 
+    
+    for k in range(17) : # repeats 17 times (2 BIT length)
+        vecN_ii[0,indx] = n_u
+        n_u = n_u + 1
+        indx = indx + 1
+    # ---------------------------------------
+    logicBITS_O =  np.append([logic0s],[logic1s])
+    mtx_NV_ij_O =  np.vstack((vecN_ii,logicBITS_O))
+    # ----------------------------------------------------------------
+    # -------------------------------- iteration #k (ii) ----------------------
+    indx = 0
+    n_i = n_v + 1
+    n_j = delta_1BIT + n_i - 1  
+    n_v = deltaN_E + n_i - 1 
+    n_u = n_v - delta_2BIT + 1
+    # ----------------------------------------------------------------
+    for k in range(8) : # repeats 8 times (1 BIT length)
+        vecN_ii[0,indx] = n_i
+        n_i = n_i + 1
+        indx = indx + 1 
+    
+    for k in range(17) : # repeats 17 times (2 BIT length)
+        vecN_ii[0,indx] = n_u
+        n_u = n_u + 1
+        indx = indx + 1
+    # ---------------------------------------
+    logicBITS_E =  np.append([logic0s],[logic1s])
+    mtx_NV_ij_E =  np.vstack((vecN_ii,logicBITS_E))
+    # ----------------------------------------------------------------
+    MTX_NV_data =  np.vstack((mtx_NV_ij_O,mtx_NV_ij_E)) 
+    MTX_NV_ALLdata = np.vstack((MTX_NV_ALLdata,MTX_NV_data)) 
+
+maxvecN_ii = vecN_ii.max()
+# ----------------------------------------------------------------------------
+# <<<< END of FOR LOOP 
+# ----------------------------------------------------------------------------
+DATA_n_LOGICvals = MTX_NV_ALLdata
+# -------------------------------------------------------------------------
+# Since the DATA file with all the KNOWN guaranteed states is too large to access:
+# Create the data here as per: Matrix_vecLOGICbits-1.py   --->[MTXdata_nLOGICvals]
+# [MTXdata_nLOGICvals] <--- [2x6800] known actual states [n,V] pairs        
+# -----------------------------------------
+# COMPUTE:  [MTXdata_nLOGICvals]   
+# -------------------------------------------------------------------------------------------
+# Initialise and define variables & vectors
+LOGIC_0s = zeros((1,8))
+LOGIC_1s = ones((1,17))
+LOGIC_bits = np.hstack([LOGIC_0s,LOGIC_1s])
+MTXdata_nLOGICvals = zeros((2,6800)) # stores each [seNVi] as a check to [DATA_n_LOGICvals] <--[544x25] 
+seNVi = zeros((2,1)) # initialise data vector holder
+# ---------------------------------------
+# -------------- iteration# 1 -----------  
+cntVLBi = 1
+scanNi_r = 0 
+scanNi_c = 0 
+scanVi = 0 
+
+seNVi[0] = DATA_n_LOGICvals[scanNi_r,scanNi_c]
+seNVi[1] = LOGIC_bits[0,scanVi]
+# ---------------------------------------
+# Now all set to continue in FOR loop :
+# ------------------------------------------------
+i = 1 # iteration number for computing [seNVi] vector[2x1] 
+MTXdata_nLOGICvals[0,i-1] = seNVi[0]
+MTXdata_nLOGICvals[1,i-1] = seNVi[1]  
+# ------------------------------------------------
+# FOR loop : START---->>>
+# ------------------------------------------------
+#for k in range(30): # k values 0 to 29 : repeats 30 times
+for k_INC in range(6798): #  repeats 6798 times : iteration# 2...6800 (=544x25)
+    # ---------------------------------------
+    i = i + 1 # current iteration number for evaluating [seNVi]
+    # k_INC = i + 2
+    if (cntVLBi == 25) :
+        cntVLBi = 1
+        scanNi_r = scanNi_r + 2
+        scanNi_c = 0
+        scanVi = 0
+    else :
+        cntVLBi = cntVLBi + 1
+        scanNi_c = scanNi_c + 1 
+        scanVi = scanVi + 1 
+     
+    seNVi[0] = DATA_n_LOGICvals[scanNi_r,scanNi_c]
+    seNVi[1] = LOGIC_bits[0,scanVi]
+    # ---------------------------------------
+    MTXdata_nLOGICvals[0,i-1] = seNVi[0]
+    MTXdata_nLOGICvals[1,i-1] = seNVi[1]
+# ------------------------------------------------
+# FOR loop : <<<----END 
+# ---------------------------------------------------
+# <----  [MTXdata_nLOGICvals] is now available
+# -------------------------------------------------------------------------------------------
+# STATE ESTIMATION of PULSES 
+# -------------------------------------------------------------------------------------------
+DataP=[]
+DataP = signalDataSE[(192+6016-1):26085] # (192+6016)= 6208 
+DataP_chck1 = DataP[0] # first data value
+Vave = np.mean(DataP)
+DATAbit_1_range = signalDataSE[(6225):6286]
+N = 19878.00 # number of data points 
+numPTS_SE = int(N)
+xvo = 1.60000000 # initial voltage (estimate) of pulse at start of interval
+xno = 6226.0000 # initial sample number n of pulse at start of interval
+Xpts = np.linspace(6226,6286,61)
+X = Xpts
+Y = DATAbit_1_range # = signalDataSE[(6225):6286]
+varF = 2  # number of process state variables
+varH = 1  # number of sensor measurement variables
+xko = np.vstack((xno,xvo)) #[2x1]
+Pko = 0.001*ones((2,2)) # estimated initial ERR covariance matrix
+Pk = zeros((2,2)) # initialised ERR covariance matrix
+stdP = 0.001 # arbitrary process "noise" standard deviation
+wkF1 = stdP * np.random.rand(Xpts.shape[0])
+wkF2 = stdP * np.random.rand(Xpts.shape[0])
+wkF = np.block([[wkF1],[wkF2]]) # [2x192]
+numEL3 = np.shape(wkF)
+wkFSRCE = np.array([wkF]).T  # process noise source 
+Qmtx = np.cov(wkF) #  general covariance matrix of the random process noise [2x2]
+# --------------------------------------------------------
+# MEASUREMENT NOISE
+sR = 0.01 # sensor noise standard deviation (estimated)
+vkV = sR * np.random.rand(Xpts.shape[0]) # measurement noise source vector of data : mean = 0
+vkVSRCE = np.array([vkV]).T  # measurement noise source 
+R = np.cov(vkV) # general covariance matrix of the measurement noise
+Rmtx = np.array([R])
+vkV_H = NSEvecSE_H[0:numPTS_SE] # synthetic measurement noise data for HIGH bits 
+R_H = np.cov(vkV_H) # general covariance matrix of the measurement noise HIGH bits
+vkV_L = NSEvecSE_L[0:numPTS_SE] # synthetic measurement noise data for LOW bits 
+R_L = np.cov(vkV_L) # general covariance matrix of the measurement noise LOW bits
+# Final initialization & pre-adjustments
+xk1 = zeros((varF,1))
+Pk1 = zeros((varF,varF))
+zk = zeros((1,1)) 
+xk =   np.vstack((xno,xvo)) #[2x1]
+PZk = zeros((1,19878)) 
+PXk = zeros((2,19878)) 
+PXk_nV = zeros((2,19879)) 
+Idm = eye(varF) 
+Idn = eye(varH)
+# Other matrix & vector definitions
+B = zeros((varF,varF)) # B = control input model
+uk = zeros((varF,1)) # uk = control command input vector
+DLTAYk = zeros((varH,19878)) # stores measurement ERR residual
+DLTAYhatk = zeros((varH,19878))  # stores updated measurement ERR residual
+# Final initial values variables
+xi = xno
+xj = xvo
+i = 1 # counter variable for each state : ALWAYS set to i = 1
+iNz_H = (192+6016-1) # index counter for noise on HIGH bit
+iNz_L = (192+6016-1) # index counter for noise on LOW bit
+iTT = 1574 # index counter of truth table for GUARANTEED values |STT| |STP1||STP| bits
+seNVi = MTXdata_nLOGICvals[:,iTT] # first known states in col# 1 = (cntNV+1)
+xk1_n = xi # temporary var for sample number state estimate
+xk1_V = xj # temporary var for voltage state estimate
+PXk_nV[0,i-1] = xi  # PXk [2,192] storage matrix for EKF state estimates
+PXk_nV[1,i-1] = xj  # PXk [2,192] storage matrix for EKF state estimates
+# --------------------------------------------------------------------------------------
+# Initialise variables for MAIN FOR loop with range = 208 >>> 
+# ------------------------------------------------------------
+# ---> First 23 characters after IDLE : SET --->>> kRANGE = int(23)
+# --------------------------------
+nu = 211.00 # <<<< sample number corresponding to START of first 7-BIT data frame
+indx_MTXdt_LGCvls = 0 # ni = 193 ==> indx_MTXdt_LGCvls = 0
+# --------------------------------
+ni = nu - 18
+dlta_n = 61
+nv = nu + dlta_n
+i_global_R = 0 # state estimates continuous counter for ALL estimates [MTX_PXk_V]  
+MTX_PXk_V = 9*ones((209,62)) # STORES all SE of DATA only voltages : 62 = 7*8.681
+cntGLOBAL = 0
+# --------------------------------------------------------------------------------------
+kRANGE = int(209) # MAXIMUM value allowed is: 209
+for k in range(kRANGE) : # MAIN FOR loop  :::::: START : range MAX = 208
+    # -----------------------------------------
+    # Initialise variables for EKF FOR loop >>> 
+    # -----------------------------------------
+    xvo = 1.600000000
+    xno = nu + 1.00
+    xko = np.vstack((xno,xvo)) #[2x1]
+    xi = xno
+    xj = xvo
+    iNz_H = int(ni - 1)
+    iNz_L = int(ni - 1)
+    DATAbit_X_range = signalDataSE[(int(nu)):(int(nv))]
+    Y = DATAbit_X_range # actual noisey sensor signal data for each EKF 7 DATA bit frame
+    # --------------
+    # Generic variables for each EKF estimation iteration of --> 7 DATA bits      
+    Pko = 0.001*ones((2,2)) # estimated initial ERR covariance matrix
+    Pk = zeros((2,2)) # initialised ERR covariance matrix
+    xk1 = zeros((varF,1))
+    Pk1 = zeros((varF,varF))
+    zk = zeros((1,1)) 
+    xk =   np.vstack((xno,xvo)) #[2x1]
+    PZk = zeros((1,61)) 
+    PXk = zeros((2,61)) 
+    PXk_nV = zeros((2,62)) 
+    Xpts = np.linspace(1,61,61)
+    stdP = 0.001 # arbitrary process "noise" standard deviation
+    wkF1 = stdP * np.random.rand(Xpts.shape[0])
+    wkF2 = stdP * np.random.rand(Xpts.shape[0])
+    wkF = np.block([[wkF1],[wkF2]]) # [2x192]
+    Qmtx = np.cov(wkF) #  general covariance matrix of the random process noise [2x2]
+    # --------------
+    i = 1 # WARNING ! State estimation counter i RESETS after each DATA 7-bit frame
+    # ------------------------------------------------
+    # Extended Kalman Filter Algorithm : START---->>>
+    # ------------------------------------------------
+    for k_INC in range(1,61,1) : # 7 bits only of first DATA bit ASCII code 7 bit assumed
+   
+        wkT = np.array([[wkF[0,i-1]],[wkF[1,i-1]]])  # [2x1] i.e Size = (2,1)
+        # -------------------------------------
+        if (k_INC == 1):
+            xk1[0,0] = xi + wkT[0,0]
+        else :
+            xk1[0,0] = xi + 1.000000 + wkT[0,0]
+        # -------------------------------------
+        xk1[1,0] = xj + wkT[1,0]
+        xk1_n = xk1[0,0] # temporary var for sample number state estimate
+        xk1_V = xk1[1,0] # temporary var for voltage state estimate
+        PXk_nV[0,i] = xk1_n  # PXk [2,192] storage matrix for EKF n state estimates
+        PXk_nV[1,i] = xk1_V  # PXk [2,192] storage matrix for EKF V state estimates
+        # Compute the JACOBIAN MATRIX for the process model  :
+        #Defining the main function
+        def f(x1,x2):
+            return (x1 + 1 + wkT[0,0], x2 + wkT[1,0])
+        #Defining input tensors
+        x1 = tensor(xi)
+        x2 = tensor(xj)
+        JacobianMtxF=[]
+        # Compute the jacobian matrix of f
+        JacobianMtxF = jacobian(f,(x1,x2))
+        Fmtx = np.array(JacobianMtxF)
+        FmtxT = Fmtx.T
+        # ---------------------------------------------------------------
+        Pk1 =  FmtxT@Pk + Qmtx # [2x2]
+        vkT = np.array([[vkV[i-1]]])  # [1x1] i.e Size = (1,1)
+        # ---------------------------------------------------------------
+        # Compute the JACOBIAN MATRIX for the measurement model h :
+        #Defining the main function
+        def h(x1,x2):
+            return (x2 + vkT[0,0])
+        #Defining input tensor
+        x2 = tensor(xj)
+        JacobianMtxH=[]
+        # Compute the jacobian matrix of h
+        JacobianMtxH = jacobian(h,(x1,x2))
+        Hmtx = np.array([JacobianMtxH])    
+        HmtxT = Hmtx.T
+        # ---------------------------------------------------------------
+        # NOISE assignments :
+        if (xk1_V > 1.6000000) : # state estimate of BIT is --> HIGH
+            vkT = 3.2000 - NSEvecSE_H[iNz_H] # access element# (iNz_H + 1) of  [NSEvecSE_H]
+        
+        else :
+            vkT = 0.0000 + NSEvecSE_L[iNz_L] # access element# (iNz_L + 1) of  [NSEvecSE_L]
+
+        zk =  Y[i-1] + 0.00000 # sensor reading = amplitude voltage measured + sensor noise
+        # ---------------------------------------------------------------
+        deltaYk = zk - Hmtx@xk1
+        Smtx = Rmtx + Hmtx@Pk1@HmtxT
+        iSmtx = scipy.linalg.solve(Smtx,Idn)  #a\b ---> a=Smtx , b=Idn a [square matrix]
+        Kmtx = Pk1@HmtxT@iSmtx  # [2x1]
+        KmtxT = Kmtx.T # [1x2]
+        xhatk1 = xk1 + Kmtx@deltaYk
+        xi = xhatk1[0,0]
+        xj = xhatk1[1,0]
+        IntmdMtx = Idm - Kmtx@Hmtx # intermediate matrix computation for Phatk1
+        Phatk1 = IntmdMtx@Pk1 
+        deltaYhatk = zk - Hmtx@xhatk1
+        xk = xhatk1
+        Pk = Phatk1
+        # Store data for plots:
+        PZk[0,i-1] = zk   # PZk [1,192] storage matrix for sensor measurements  
+        PXk[0,i-1] = xhatk1[0,0]  # PXk [2,192] storage matrix for EKF state estimates
+        PXk[1,i-1] = xhatk1[1,0]  # PXk [2,192] storage matrix for EKF state estimates
+        DLTAYk[0,i-1] = deltaYk # stores measurement ERR residual
+        DLTAYhatk[0,i-1] = deltaYhatk  # stores updated measurement ERR residual
+
+        i = i + 1
+        iNz_H = iNz_H + 1
+        iNz_L = iNz_L + 1
+    # ------------------------------------------------
+    # Extended Kalman Filter Algorithm : <<<----END 
+    # ------------------------------------------------
+    # --------------------------------------------------------------------------------------
+    REM_cntGLOBAL = cntGLOBAL%2 #  REM_cntGLOBAL = 0 ==> EVEN &  REM_cntGLOBAL = 1 ==> ODD
+    indx_MTXdt_LGCvls = indx_MTXdt_LGCvls + 25
+    ni = MTXdata_nLOGICvals[0,indx_MTXdt_LGCvls]
+    if (REM_cntGLOBAL == 1 ) :
+        nu = ni + 17
+        dlta_n = 61
+    else :
+        nu = ni + 18
+        dlta_n = 60
+    nv = nu + dlta_n 
+    # ------------------------------------------------
+    MTX_PXk_V[i_global_R,:] = PXk_nV[1,:] # STORE |DATA 7-bits| estimates here
+    i_global_R = i_global_R + 1
+    # ------------------------------------------------
+    cntGLOBAL = cntGLOBAL + 1
+# --------------------------------------------------------------------------------------
+# <<<------- for k in range(208) : # MAIN FOR loop  :::::: END
+# --------------------------------------------------------------------------------------
+iuv = 0
+PXk_nV = MTX_PXk_V[iuv,:]
+DATAbit_vec = []    
+MTX_DATAbits = 9*ones((210,7)) 
+iDbts = 0 # index counter for storing DATA bits in [MTX_DATAbits]
+indx_io = 0
+#--------------------------------------------------------
+# FOR loop START : ||||| to store all SEs of 7 DATA bits  
+#--------------------------------------------------------
+for k_INCI in range(kRANGE) : # repeats (kRANGE) times  : range MAX = 208  
+    
+    # Manually adjust settings here ----->>>>>>>>>
+    delta_nINDX1 = 5 
+    delta_nINDX2 = 9 
+    delta_nINDX3 = 8
+    delta_nINDX4 = 9
+    delta_nINDX5 = 8
+    delta_nINDX6 = 9
+    delta_nINDX7 = 9 
+    tol_indx = 2 # tolerance sample length for first transition from |STT| end to 1st DATA bit
+    # ------------------------------------------
+    indx_i1 = indx_io +  tol_indx + delta_nINDX1
+    indx_i2 = indx_i1 + delta_nINDX2
+    indx_i3 = indx_i2 + delta_nINDX3
+    indx_i4 = indx_i3 + delta_nINDX4
+    indx_i5 = indx_i4 + delta_nINDX5
+    indx_i6 = indx_i5 + delta_nINDX6
+    indx_i7 = indx_i6 + delta_nINDX7
+    
+    PXk_nV = MTX_PXk_V[iuv,:]
+    iuv = iuv + 1
+    DATAbit_1 = PXk_nV[0,indx_i1]
+    DATAbit_2 = PXk_nV[0,indx_i2]
+    DATAbit_3 = PXk_nV[0,indx_i3]
+    DATAbit_4 = PXk_nV[0,indx_i4]
+    DATAbit_5 = PXk_nV[0,indx_i5]
+    DATAbit_6 = PXk_nV[0,indx_i6]
+    DATAbit_7 = PXk_nV[0,indx_i7]
+    DATAbit_veci = []
+    DATAbit_veci = np.hstack([DATAbit_1,DATAbit_2,DATAbit_3,DATAbit_4,DATAbit_5,DATAbit_6,DATAbit_7])
+    # ----------------------------------------------------------
+    # Convert voltages to BITS  ||||||||||||||||||||||||||||||||
+    # ----------------------------------------------------------
+    Ypts = DATAbit_veci.ravel() 
+    PulseH =  np.array([Ypts])
+    # ------------------------------------------------------ 
+    PulseH[PulseH<1.6000000]=0 # all LOW signals set to 0
+    # ------------------------------------------------------ 
+    Ypts = PulseH.flatten() 
+    PulseL =  np.array([Ypts])
+    # ------------------------------------------------------ 
+    PulseL[PulseL>1.6000000]=1  # all LOW signals set to 1
+    # ------------------------------------------------------ 
+    Ypts = PulseL.flatten() 
+    DATA_BITSi = np.array([Ypts])
+    # ----------------------------------------------------------
+    # ALL DATA bits stored here |---------------| >>>>>>>>
+    # ----------------------------------------------------------
+    MTX_DATAbits[iDbts,:] = DATA_BITSi # ALL DATA only BITS stored here
+    # ----------------------------------------------------------
+    iDbts = iDbts + 1
+#--------------------------------------------------------------------------
+# State Estimates of DATA voltages only converted to DATA BITS and stored 
+#--------------------------------------------------------------------------
+# Classify BINARY DATA BITS according to ASCII  Character 7-bit Codes
+#--------------------------------------------------------------------------
+#--------------------------------------------------------------------------
+iASCII = 0
+#--------------------------------------------------------------------------
+# SET number of DATA bits only --->>>
+nDBTs = 7
+#---------------------------------------  
+# Convert BINARY vector list to ----> DECIMAL
+# --------------------------------------
+# Implement as a FUNCTION binToDec() :
+# --------------------------------------   
+# Notes: binary = logic 1 or 0 values only and binary = type list & nDBTs = number of bits in [binary]
+def binToDec(binary,nDBTs):    
+
+    decVAL = 0
+    decimal = 0
+    for k in range(nDBTs) :
+    #for k in range(nDBTs+1) :    
+        if (binary[nDBTs-1] == 1) :
+            dec = 2**(7-nDBTs)
+            decimal = decimal + dec
+            nDBTs = nDBTs - 1
+        else :
+            nDBTs = nDBTs - 1    
+    
+    return decimal
+# -------------------------------------------------------------------------
+print('Decoded transmitted data as ASCII 7-BIT CODE:')
+# -------------------------------------------------------------------------
+iASCII = 0
+# -------------------------------------------------------------------------
+for k_ASCII in range(kRANGE) : # range MAX = 208
+    # -----------------------------     
+    sp_cH = np.array([MTX_DATAbits[iASCII,:] ])
+    binary = sp_cH.ravel()  # [binary] is now of type list
+    # -----------------------------
+    del sp_cH  
+    ASCII_Code_DECxxx =  binToDec(binary,7)
+    del binary
+    #--------------------------------------------------------------------------
+    # Use 7 bit ASCII table to retrieve character LETTER     
+    #--------------------------------------------------------------------------
+    if (ASCII_Code_DECxxx == 65):
+        print('A')   
+    elif (ASCII_Code_DECxxx == 66) :
+        print('B')      
+    elif (ASCII_Code_DECxxx == 67) :
+        print('C')      
+    elif (ASCII_Code_DECxxx == 68) :
+        print('D')      
+    elif (ASCII_Code_DECxxx == 69) :
+        print('E')  
+    elif (ASCII_Code_DECxxx == 70) :
+        print('F')      
+    elif (ASCII_Code_DECxxx == 71) :
+        print('G')      
+    elif (ASCII_Code_DECxxx == 72) :
+        print('H')      
+    elif (ASCII_Code_DECxxx == 73) :
+        print('I')  
+    elif (ASCII_Code_DECxxx == 74) :
+        print('J')      
+    elif (ASCII_Code_DECxxx == 75) :
+        print('K')      
+    elif (ASCII_Code_DECxxx == 76) :
+        print('L')      
+    elif (ASCII_Code_DECxxx == 77) :
+        print('M')  
+    elif (ASCII_Code_DECxxx == 78) :
+        print('N')      
+    elif (ASCII_Code_DECxxx == 79) :
+        print('O')      
+    elif (ASCII_Code_DECxxx == 80) :
+        print('P')      
+    elif (ASCII_Code_DECxxx == 81) :
+        print('Q')  
+    elif (ASCII_Code_DECxxx == 82) :
+        print('R')      
+    elif (ASCII_Code_DECxxx == 83) :
+        print('S')  
+    elif (ASCII_Code_DECxxx == 84) :
+        print('T')      
+    elif (ASCII_Code_DECxxx == 85) :
+        print('U')      
+    elif (ASCII_Code_DECxxx == 86) :
+        print('V')      
+    elif (ASCII_Code_DECxxx == 87) :
+        print('W')  
+    elif (ASCII_Code_DECxxx == 88) :
+        print('X')      
+    elif (ASCII_Code_DECxxx == 89) :
+        print('Y')      
+    elif (ASCII_Code_DECxxx == 90) :
+        print('Z')   
+    # -----------------------------------    
+    elif (ASCII_Code_DECxxx == 97) :
+        print('a')  
+    elif (ASCII_Code_DECxxx == 98) :
+        print('b')      
+    elif (ASCII_Code_DECxxx == 99) :
+        print('c')      
+    elif (ASCII_Code_DECxxx == 100) :
+        print('d')      
+    elif (ASCII_Code_DECxxx == 101) :
+        print('e')  
+    elif (ASCII_Code_DECxxx == 102) :
+        print('f')      
+    elif (ASCII_Code_DECxxx == 103) :
+        print('g')      
+    elif (ASCII_Code_DECxxx == 104) :
+        print('h')      
+    elif (ASCII_Code_DECxxx == 105) :
+        print('i')  
+    elif (ASCII_Code_DECxxx == 106) :
+        print('j')      
+    elif (ASCII_Code_DECxxx == 107) :
+        print('k')      
+    elif (ASCII_Code_DECxxx == 108) :
+        print('l')      
+    elif (ASCII_Code_DECxxx == 109) :
+        print('m')  
+    elif (ASCII_Code_DECxxx == 110) :
+        print('n')      
+    elif (ASCII_Code_DECxxx == 111) :
+        print('o')      
+    elif (ASCII_Code_DECxxx == 112) :
+        print('p')      
+    elif (ASCII_Code_DECxxx == 113) :
+        print('q')  
+    elif (ASCII_Code_DECxxx == 114) :
+        print('r')      
+    elif (ASCII_Code_DECxxx == 115) :
+        print('s')  
+    elif (ASCII_Code_DECxxx == 116) :
+        print('t')      
+    elif (ASCII_Code_DECxxx == 117) :
+        print('u')      
+    elif (ASCII_Code_DECxxx == 118) :
+        print('v')      
+    elif (ASCII_Code_DECxxx == 119) :
+        print('w')  
+    elif (ASCII_Code_DECxxx == 120) :
+        print('x')      
+    elif (ASCII_Code_DECxxx == 121) :
+        print('y')      
+    elif (ASCII_Code_DECxxx == 122) :
+        print('z') 
+    # -----------------------------------       
+    # Special characters
+    elif (ASCII_Code_DECxxx == 32) : # [   ] = space
+        print('  ')  
+    elif (ASCII_Code_DECxxx == 63) : #  ?
+        print('?') 
+    elif (ASCII_Code_DECxxx == 33) : #  !
+        print('!')         
+    elif (ASCII_Code_DECxxx == 10) : #  LF
+        print('LF')  
+    elif (ASCII_Code_DECxxx == 45) : #  -
+        print('-') 
+    elif (ASCII_Code_DECxxx == 64) : #  @
+        print('@') 
+    elif (ASCII_Code_DECxxx == 46) : #  .
+        print('.') 
+    elif (ASCII_Code_DECxxx == 34) : #  "
+        print('"')
+    elif (ASCII_Code_DECxxx == 58) : #  :
+        print(':') 
+    elif (ASCII_Code_DECxxx == 60) : #  <
+        print('<')
+    elif (ASCII_Code_DECxxx == 127) : #  DEL
+        print('DEL') 
+    elif (ASCII_Code_DECxxx == 96) : #  `
+        print('`')     
+    elif (ASCII_Code_DECxxx == 126) : #  ~
+        print('~') 
+    elif (ASCII_Code_DECxxx == 62) : #  >
+        print('>') 
+    elif (ASCII_Code_DECxxx == 44) : #  ,
+        print(',')    
+    elif (ASCII_Code_DECxxx == 20) : #  DC4
+        print('DC4')
+    elif (ASCII_Code_DECxxx == 125) : #  }
+        print('}')   
+    elif (ASCII_Code_DECxxx == 25) : #  EM
+        print('EM') 
+    elif (ASCII_Code_DECxxx == 124) : #  |
+        print('|')   
+    elif (ASCII_Code_DECxxx == 2) : #  STX
+        print('STX')  
+    elif (ASCII_Code_DECxxx == 47) : # /
+        print('/')  
+    # ----------------------------------------------------    
+    else : 
+        print('Unclassified ASCII code detected') 
+        # -----------------------------     
+        #sp_cH = np.array([DATA_BITSi]) 
+        sp_cH = np.array([MTX_DATAbits[iASCII,:] ])
+        binary = sp_cH.ravel()  # [binary] is now of type list
+        # -----------------------------
+        del sp_cH  
+        #---------------------------------------    
+        i = 7
+        decVAL = 0
+        decimal_VAL = 0
+        dec2 = 2**(7-i)
+  
+        for k in range(7) :
+            if (binary[i-1] == 1) : # Valid only if: [binary] of type list 
+                dec = 2**(7-i)
+                decimal_VAL = decimal_VAL + dec
+                i = i - 1
+            else :
+                i = i - 1
+        print('Decimal value:', decimal_VAL)       
+    # -----------------------------------     
+    iASCII  = iASCII + 1   
+# -------------------------------------------------------------------------
+# End :  FOR loop ASCII character assignments
+# -------------------------------------------------------------------------
+
+
+
+
